@@ -1,0 +1,53 @@
+@import "tailwindcss";
+
+/* Premium Styles for EventSync */
+.premium-card {
+  background-color: white;
+  border: 1px solid #e5e5e5;
+  border-radius: 20px;
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.05);
+  overflow: hidden;
+}
+
+.premium-input {
+  width: 100%;
+  padding: 14px 16px;
+  border: 1px solid #d1d5db;
+  border-radius: 12px;
+  font-size: 15px;
+  transition: all 0.2s;
+}
+
+.premium-input:focus {
+  outline: none;
+  border-color: #10b981;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
+}
+
+.premium-button {
+  background-color: #10b981;
+  color: white;
+  font-weight: 600;
+  border-radius: 12px;
+  padding: 14px 24px;
+  transition: all 0.2s;
+}
+
+.premium-button:hover {
+  background-color: #059669;
+  transform: translateY(-1px);
+}
+
+.premium-button-outline {
+  border: 2px solid #e5e5e5;
+  color: #374151;
+  font-weight: 600;
+  border-radius: 12px;
+  padding: 14px 24px;
+  transition: all 0.2s;
+}
+
+.premium-button-outline:hover {
+  border-color: #10b981;
+  color: #10b981;
+}
