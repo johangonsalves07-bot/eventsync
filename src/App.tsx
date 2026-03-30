@@ -13,17 +13,14 @@ import {
   Upload, 
   LogOut, 
   LayoutDashboard, 
-  ClipboardList,
   ChevronRight,
   User as UserIcon,
   Image as ImageIcon,
-  AlertCircle,
   Loader2
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 // --- Types ---
-
 type Role = 'organizer' | 'member';
 
 interface User {
@@ -50,27 +47,21 @@ interface Task {
   proof_url?: string;
 }
 
-// --- Components ---
-
+// ====================== LOGIN ======================
 const Login = ({ onLogin }: { onLogin: (user: User) => void }) => {
   const [name, setName] = useState('');
   const [role, setRole] = useState<Role>('organizer');
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name) return;
+    if (!name.trim()) return;
+
     const user: User = {
       id: Math.random().toString(36).substr(2, 9),
-      name,
+      name: name.trim(),
       role
     };
     
-    await fetch('/api/auth', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(user)
-    });
-
     localStorage.setItem('eventsync_user', JSON.stringify(user));
     onLogin(user);
   };
@@ -143,6 +134,7 @@ const Login = ({ onLogin }: { onLogin: (user: User) => void }) => {
   );
 };
 
+// ====================== ORGANIZER DASHBOARD ======================
 const OrganizerDashboard = ({ user, onLogout }: { user: User, onLogout: () => void }) => {
   const [events, setEvents] = useState<Event[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
@@ -151,68 +143,109 @@ const OrganizerDashboard = ({ user, onLogout }: { user: User, onLogout: () => vo
   const [isCreatingEvent, setIsCreatingEvent] = useState(false);
   const [isCreatingTask, setIsCreatingTask] = useState(false);
   
-  // Form states
   const [newEventName, setNewEventName] = useState('');
   const [newTask, setNewTask] = useState({ title: '', description: '', deadline: '', assigned_to: '' });
 
-  // Fake members for demo
-  const availableMembers = [
-    { id: 'm1', name: 'Aarav Sharma' },
-    { id: 'm2', name: 'Priya Patel' },
-    { id: 'm3', name: 'Rohan Mehta' },
-    { id: 'm4', name: 'Sneha Gupta' }
-  ];
+  // Original fetch effects
+  useEffect(() => {
+    fetchEvents();
+  }, [user.id]);
+
+  useEffect(() => {
+    if (selectedEvent) {
+      fetchTasks(selectedEvent.id);
+      fetchMembers(selectedEvent.id);
+    }
+  }, [selectedEvent]);
+
+  // Cross-tab storage fix (safe version)
+  useEffect(() => {
+    const saved = localStorage.getItem('eventsync_all_events');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          setEvents(parsed);
+        }
+      } catch (e) {
+        setEvents([]);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('eventsync_all_events', JSON.stringify(events));
+  }, [events]);
+
+  const fetchEvents = async () => {
+    try {
+      const res = await fetch(`/api/events/organizer/${user.id}`);
+      const data = await res.json();
+      if (Array.isArray(data)) setEvents(data);
+    } catch (e) {}
+  };
+
+  const fetchTasks = async (eventId: string) => {
+    try {
+      const res = await fetch(`/api/events/${eventId}/tasks`);
+      const data = await res.json();
+      if (Array.isArray(data)) setTasks(data);
+    } catch (e) {}
+  };
+
+  const fetchMembers = async (eventId: string) => {
+    try {
+      const res = await fetch(`/api/events/${eventId}/members`);
+      const data = await res.json();
+      if (Array.isArray(data)) setMembers(data);
+    } catch (e) {}
+  };
 
   const handleCreateEvent = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newEventName.trim()) return;
 
     const code = Math.random().toString(36).substr(2, 6).toUpperCase();
-    
     const newEvent: Event = {
-      id: Date.now().toString(),
+      id: Math.random().toString(36).substr(2, 9),
       name: newEventName.trim(),
       code,
       organizer_id: user.id
     };
 
-    setEvents(prev => [newEvent, ...prev]);
+    const updatedEvents = [newEvent, ...events];
+    setEvents(updatedEvents);
+    localStorage.setItem('eventsync_all_events', JSON.stringify(updatedEvents));
+
     setNewEventName('');
     setIsCreatingEvent(false);
-    
-    // Auto select the newly created event
-    setTimeout(() => setSelectedEvent(newEvent), 300);
+    setSelectedEvent(newEvent);
   };
 
-  const handleCreateTask = (e: React.FormEvent) => {
+  const handleCreateTask = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedEvent || !newTask.title.trim()) return;
+    if (!selectedEvent) return;
 
-    const task: Task = {
-      id: Date.now().toString(),
+    const task = {
+      id: Math.random().toString(36).substr(2, 9),
       event_id: selectedEvent.id,
-      title: newTask.title.trim(),
-      description: newTask.description.trim(),
-      deadline: newTask.deadline,
-      assigned_to: newTask.assigned_to,
-      status: 'pending'
+      ...newTask
     };
 
-    setTasks(prev => [...prev, task]);
+    await fetch('/api/tasks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(task)
+    });
+
     setNewTask({ title: '', description: '', deadline: '', assigned_to: '' });
     setIsCreatingTask(false);
-  };
-
-  // When selecting an event, load fake members
-  const handleSelectEvent = (event: Event) => {
-    setSelectedEvent(event);
-    setTasks([]); // Reset tasks for demo
-    setMembers(availableMembers); // Show demo members
+    fetchTasks(selectedEvent.id);
   };
 
   return (
     <div className="min-h-screen bg-zinc-50">
-      {/* Sidebar - Keep same as before */}
+      {/* Sidebar */}
       <div className="fixed left-0 top-0 bottom-0 w-64 bg-white border-r border-zinc-200 p-6 flex flex-col">
         <div className="mb-10">
           <h2 className="text-2xl font-serif font-bold text-zinc-900">EventSync</h2>
@@ -226,23 +259,20 @@ const OrganizerDashboard = ({ user, onLogout }: { user: User, onLogout: () => vo
             <LayoutDashboard size={18} />
             <span className="font-medium">Overview</span>
           </button>
-          
           <div className="pt-4 pb-2 px-4 text-xs font-bold text-zinc-400 uppercase tracking-wider">My Events</div>
-          
           {events.map(event => (
             <button 
               key={event.id}
-              onClick={() => handleSelectEvent(event)}
+              onClick={() => setSelectedEvent(event)}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${selectedEvent?.id === event.id ? 'bg-emerald-500 text-white' : 'text-zinc-500 hover:bg-zinc-100'}`}
             >
               <Calendar size={18} />
               <span className="font-medium truncate">{event.name}</span>
             </button>
           ))}
-
           <button 
             onClick={() => setIsCreatingEvent(true)}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-emerald-600 hover:bg-emerald-50 transition-all mt-4"
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-emerald-600 hover:bg-emerald-50 transition-all"
           >
             <Plus size={18} />
             <span className="font-medium">New Event</span>
@@ -269,11 +299,16 @@ const OrganizerDashboard = ({ user, onLogout }: { user: User, onLogout: () => vo
         </div>
       </div>
 
-      {/* Main Content - Rest remains mostly same, but with fixes */}
+      {/* Main Content */}
       <main className="ml-64 p-10">
         <AnimatePresence mode="wait">
           {!selectedEvent ? (
-            <motion.div key="overview" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+            <motion.div 
+              key="overview"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+            >
               <header className="mb-10">
                 <h1 className="text-4xl font-serif font-bold text-zinc-900 mb-2">Welcome back, {user.name}</h1>
                 <p className="text-zinc-500 italic">Manage your events and track team progress.</p>
@@ -286,7 +321,7 @@ const OrganizerDashboard = ({ user, onLogout }: { user: User, onLogout: () => vo
                 </div>
                 <div className="premium-card p-6">
                   <div className="text-zinc-500 text-sm font-medium mb-1">Total Members</div>
-                  <div className="text-4xl font-bold text-zinc-900">4</div>
+                  <div className="text-4xl font-bold text-zinc-900">--</div>
                 </div>
                 <div className="premium-card p-6">
                   <div className="text-zinc-500 text-sm font-medium mb-1">Tasks Completed</div>
@@ -297,12 +332,11 @@ const OrganizerDashboard = ({ user, onLogout }: { user: User, onLogout: () => vo
               <div className="premium-card overflow-hidden">
                 <div className="p-6 border-b border-zinc-100 flex items-center justify-between">
                   <h3 className="font-bold text-zinc-900">Recent Events</h3>
+                  <button onClick={() => setIsCreatingEvent(true)} className="text-emerald-600 text-sm font-bold hover:underline">View All</button>
                 </div>
                 <div className="divide-y divide-zinc-100">
                   {events.length === 0 ? (
-                    <div className="p-16 text-center text-zinc-400 italic">
-                      No events created yet. Click "New Event" to get started.
-                    </div>
+                    <div className="p-10 text-center text-zinc-400 italic">No events created yet.</div>
                   ) : (
                     events.map(event => (
                       <div key={event.id} className="p-6 flex items-center justify-between hover:bg-zinc-50 transition-colors">
@@ -316,7 +350,7 @@ const OrganizerDashboard = ({ user, onLogout }: { user: User, onLogout: () => vo
                           </div>
                         </div>
                         <button 
-                          onClick={() => handleSelectEvent(event)}
+                          onClick={() => setSelectedEvent(event)}
                           className="p-2 rounded-lg hover:bg-zinc-200 text-zinc-400 transition-colors"
                         >
                           <ChevronRight size={20} />
@@ -328,8 +362,12 @@ const OrganizerDashboard = ({ user, onLogout }: { user: User, onLogout: () => vo
               </div>
             </motion.div>
           ) : (
-            // Event Details view (same as before, but with better task display)
-            <motion.div key="event-details" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+            <motion.div 
+              key="event-details"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+            >
               <header className="mb-10 flex items-end justify-between">
                 <div>
                   <div className="flex items-center gap-3 text-zinc-500 text-sm font-medium mb-2">
@@ -359,22 +397,32 @@ const OrganizerDashboard = ({ user, onLogout }: { user: User, onLogout: () => vo
                     </div>
                     <div className="divide-y divide-zinc-100">
                       {tasks.length === 0 ? (
-                        <div className="p-12 text-center text-zinc-400 italic">No tasks assigned yet. Create one above.</div>
+                        <div className="p-10 text-center text-zinc-400 italic">No tasks assigned yet.</div>
                       ) : (
                         tasks.map(task => (
                           <div key={task.id} className="p-6">
-                            <div className="flex items-start justify-between">
-                              <div className="flex-1">
-                                <h4 className="font-bold text-zinc-900">{task.title}</h4>
+                            <div className="flex items-start justify-between mb-4">
+                              <div>
+                                <h4 className="font-bold text-zinc-900 text-lg">{task.title}</h4>
                                 <p className="text-zinc-500 text-sm mt-1">{task.description}</p>
                               </div>
-                              <span className="px-3 py-1 bg-zinc-100 text-zinc-600 text-xs font-bold rounded-full">
-                                PENDING
+                              <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                                task.status === 'completed' ? 'bg-emerald-100 text-emerald-700' : 'bg-zinc-100 text-zinc-600'
+                              }`}>
+                                {task.status.toUpperCase()}
                               </span>
                             </div>
-                            <div className="mt-4 text-sm text-zinc-500 flex items-center gap-6">
-                              <div>Deadline: {new Date(task.deadline).toLocaleDateString()}</div>
-                              <div>Assigned to: {availableMembers.find(m => m.id === task.assigned_to)?.name || 'Unassigned'}</div>
+                            <div className="flex items-center justify-between text-sm">
+                              <div className="flex items-center gap-4">
+                                <div className="flex items-center gap-1 text-zinc-500">
+                                  <Clock size={14} />
+                                  <span>{task.deadline}</span>
+                                </div>
+                                <div className="flex items-center gap-1 text-zinc-500">
+                                  <UserIcon size={14} />
+                                  <span>{members.find(m => m.id === task.assigned_to)?.name || 'Unassigned'}</span>
+                                </div>
+                              </div>
                             </div>
                           </div>
                         ))
@@ -386,17 +434,21 @@ const OrganizerDashboard = ({ user, onLogout }: { user: User, onLogout: () => vo
                 <div className="space-y-6">
                   <div className="premium-card">
                     <div className="p-6 border-b border-zinc-100">
-                      <h3 className="font-bold text-zinc-900">Team Members</h3>
+                      <h3 className="font-bold text-zinc-900">Members</h3>
                     </div>
                     <div className="p-6 space-y-4">
-                      {members.map(member => (
-                        <div key={member.id} className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 font-bold">
-                            {member.name[0]}
+                      {members.length === 0 ? (
+                        <div className="text-center text-zinc-400 italic text-sm">No members joined yet.</div>
+                      ) : (
+                        members.map(member => (
+                          <div key={member.id} className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center text-zinc-600 text-xs font-bold">
+                              {member.name[0]}
+                            </div>
+                            <span className="text-sm font-medium text-zinc-900">{member.name}</span>
                           </div>
-                          <span className="font-medium">{member.name}</span>
-                        </div>
-                      ))}
+                        ))
+                      )}
                     </div>
                   </div>
                 </div>
@@ -408,34 +460,36 @@ const OrganizerDashboard = ({ user, onLogout }: { user: User, onLogout: () => vo
         {/* Create Event Modal */}
         <AnimatePresence>
           {isCreatingEvent && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/40">
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
               <motion.div 
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setIsCreatingEvent(false)}
+                className="absolute inset-0 bg-zinc-900/40 backdrop-blur-sm"
+              />
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl p-8"
               >
-                <h2 className="text-2xl font-serif font-bold mb-6">Create New Event</h2>
+                <h2 className="text-2xl font-serif font-bold text-zinc-900 mb-6">Create New Event</h2>
                 <form onSubmit={handleCreateEvent} className="space-y-6">
-                  <input 
-                    type="text" 
-                    value={newEventName}
-                    onChange={(e) => setNewEventName(e.target.value)}
-                    className="premium-input"
-                    placeholder="Event Name (e.g. Tech Fest 2026)"
-                    required
-                  />
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-700 mb-2">Event Name</label>
+                    <input 
+                      type="text" 
+                      value={newEventName}
+                      onChange={(e) => setNewEventName(e.target.value)}
+                      className="premium-input"
+                      placeholder="e.g. Summer Gala 2026"
+                      required
+                    />
+                  </div>
                   <div className="flex gap-4">
-                    <button 
-                      type="button" 
-                      onClick={() => setIsCreatingEvent(false)} 
-                      className="premium-button-outline flex-1"
-                    >
-                      Cancel
-                    </button>
-                    <button type="submit" className="premium-button flex-1">
-                      Create Event
-                    </button>
+                    <button type="button" onClick={() => setIsCreatingEvent(false)} className="premium-button-outline flex-1">Cancel</button>
+                    <button type="submit" className="premium-button flex-1">Create Event</button>
                   </div>
                 </form>
               </motion.div>
@@ -443,35 +497,48 @@ const OrganizerDashboard = ({ user, onLogout }: { user: User, onLogout: () => vo
           )}
         </AnimatePresence>
 
-        {/* Create Task Modal - Same as before but simplified */}
+        {/* Create Task Modal */}
         <AnimatePresence>
-          {isCreatingTask && selectedEvent && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/40">
+          {isCreatingTask && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
               <motion.div 
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-lg"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setIsCreatingTask(false)}
+                className="absolute inset-0 bg-zinc-900/40 backdrop-blur-sm"
+              />
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl p-8"
               >
-                <h2 className="text-2xl font-serif font-bold mb-6">Assign New Task</h2>
+                <h2 className="text-2xl font-serif font-bold text-zinc-900 mb-6">Assign New Task</h2>
                 <form onSubmit={handleCreateTask} className="space-y-6">
-                  <input 
-                    type="text" 
-                    value={newTask.title}
-                    onChange={(e) => setNewTask({...newTask, title: e.target.value})}
-                    className="premium-input"
-                    placeholder="Task Title"
-                    required
-                  />
-                  <textarea 
-                    value={newTask.description}
-                    onChange={(e) => setNewTask({...newTask, description: e.target.value})}
-                    className="premium-input min-h-[100px]"
-                    placeholder="Task Description"
-                  />
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-700 mb-2">Task Title</label>
+                    <input 
+                      type="text" 
+                      value={newTask.title}
+                      onChange={(e) => setNewTask({...newTask, title: e.target.value})}
+                      className="premium-input"
+                      placeholder="e.g. Venue Decoration"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-700 mb-2">Description</label>
+                    <textarea 
+                      value={newTask.description}
+                      onChange={(e) => setNewTask({...newTask, description: e.target.value})}
+                      className="premium-input min-h-[100px]"
+                      placeholder="Detailed instructions..."
+                    />
+                  </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="text-sm text-zinc-600 mb-1 block">Deadline</label>
+                      <label className="block text-sm font-medium text-zinc-700 mb-2">Deadline</label>
                       <input 
                         type="datetime-local" 
                         value={newTask.deadline}
@@ -481,7 +548,7 @@ const OrganizerDashboard = ({ user, onLogout }: { user: User, onLogout: () => vo
                       />
                     </div>
                     <div>
-                      <label className="text-sm text-zinc-600 mb-1 block">Assign To</label>
+                      <label className="block text-sm font-medium text-zinc-700 mb-2">Assign To</label>
                       <select 
                         value={newTask.assigned_to}
                         onChange={(e) => setNewTask({...newTask, assigned_to: e.target.value})}
@@ -489,7 +556,7 @@ const OrganizerDashboard = ({ user, onLogout }: { user: User, onLogout: () => vo
                         required
                       >
                         <option value="">Select Member</option>
-                        {availableMembers.map(m => (
+                        {members.map(m => (
                           <option key={m.id} value={m.id}>{m.name}</option>
                         ))}
                       </select>
@@ -509,6 +576,7 @@ const OrganizerDashboard = ({ user, onLogout }: { user: User, onLogout: () => vo
   );
 };
 
+// ====================== MEMBER DASHBOARD ======================
 const MemberDashboard = ({ user, onLogout }: { user: User, onLogout: () => void }) => {
   const [events, setEvents] = useState<Event[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
@@ -518,77 +586,90 @@ const MemberDashboard = ({ user, onLogout }: { user: User, onLogout: () => void 
   const [uploadingTask, setUploadingTask] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Demo events pool (so members can join events created by organizer)
-  const [allEvents, setAllEvents] = useState<Event[]>([]);
+  // Load events from localStorage (cross-tab fix)
+  useEffect(() => {
+    const saved = localStorage.getItem('eventsync_all_events');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          setEvents(parsed);
+        }
+      } catch (e) {
+        setEvents([]);
+      }
+    }
+  }, []);
 
-  const availableMembers = [
-    { id: 'm1', name: 'Aarav Sharma' },
-    { id: 'm2', name: 'Priya Patel' },
-    { id: 'm3', name: 'Rohan Mehta' },
-    { id: 'm4', name: 'Sneha Gupta' }
-  ];
+  useEffect(() => {
+    fetchEvents();
+  }, [user.id]);
 
-  // Simulate fetching joined events
-  const fetchJoinedEvents = () => {
-    // For demo, we'll show events that were "joined"
-    setEvents(allEvents.filter(e => Math.random() > 0.5)); // Random for demo
+  useEffect(() => {
+    if (selectedEvent) {
+      fetchTasks(selectedEvent.id);
+    }
+  }, [selectedEvent]);
+
+  const fetchEvents = async () => {
+    try {
+      const res = await fetch(`/api/events/member/${user.id}`);
+      const data = await res.json();
+      setEvents(Array.isArray(data) ? data : []);
+    } catch (e) {}
+  };
+
+  const fetchTasks = async (eventId: string) => {
+    try {
+      const res = await fetch(`/api/events/${eventId}/tasks`);
+      const data = await res.json();
+      setTasks(Array.isArray(data) ? data.filter((t: Task) => t.assigned_to === user.id) : []);
+    } catch (e) {}
   };
 
   const handleJoinEvent = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!eventCode.trim()) return;
+    const code = eventCode.trim().toUpperCase();
+    
+    const saved = localStorage.getItem('eventsync_all_events');
+    const allEvents = saved ? JSON.parse(saved) : [];
 
-    const upperCode = eventCode.trim().toUpperCase();
-
-    // Simulate finding event by code (works with events created in Organizer)
-    const foundEvent = allEvents.find(ev => ev.code === upperCode);
+    const foundEvent = allEvents.find((ev: Event) => ev.code === code);
 
     if (foundEvent) {
-      setEvents(prev => {
-        if (prev.some(e => e.id === foundEvent.id)) return prev;
-        return [...prev, foundEvent];
-      });
+      setSelectedEvent(foundEvent);
       setEventCode('');
       setIsJoiningEvent(false);
-      alert(`Successfully joined: ${foundEvent.name}`);
     } else {
-      alert('Invalid Event Code! Ask your Organizer for the correct code.');
+      alert('Invalid event code. Please ask the Organizer for the correct code.');
     }
   };
 
-  const handleFileUpload = (taskId: string, file: File) => {
+  const handleFileUpload = async (taskId: string, file: File) => {
     if (file.size > 10 * 1024 * 1024) {
       alert('File size exceeds 10MB limit');
       return;
     }
 
     setUploadingTask(taskId);
-    
-    // Simulate upload delay
-    setTimeout(() => {
-      setTasks(prev => 
-        prev.map(task => 
-          task.id === taskId 
-            ? { ...task, status: 'completed', proof_url: URL.createObjectURL(file) } 
-            : task
-        )
-      );
+    const formData = new FormData();
+    formData.append('proof', file);
+
+    try {
+      const res = await fetch(`/api/tasks/${taskId}/submit`, {
+        method: 'POST',
+        body: formData
+      });
+
+      if (res.ok) {
+        fetchTasks(selectedEvent!.id);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
       setUploadingTask(null);
-      alert('Proof submitted successfully!');
-    }, 1200);
+    }
   };
-
-  // When organizer creates events, we make them available globally for demo
-  useEffect(() => {
-    // This is a simple way to share events between Organizer and Member in same browser
-    const handleStorageChange = () => {
-      const savedEvents = localStorage.getItem('eventsync_all_events');
-      if (savedEvents) setAllEvents(JSON.parse(savedEvents));
-    };
-
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
-  }, []);
 
   return (
     <div className="min-h-screen bg-zinc-50">
@@ -606,9 +687,7 @@ const MemberDashboard = ({ user, onLogout }: { user: User, onLogout: () => void 
             <LayoutDashboard size={18} />
             <span className="font-medium">My Tasks</span>
           </button>
-          
           <div className="pt-4 pb-2 px-4 text-xs font-bold text-zinc-400 uppercase tracking-wider">Joined Events</div>
-          
           {events.map(event => (
             <button 
               key={event.id}
@@ -619,10 +698,9 @@ const MemberDashboard = ({ user, onLogout }: { user: User, onLogout: () => void 
               <span className="font-medium truncate">{event.name}</span>
             </button>
           ))}
-
           <button 
             onClick={() => setIsJoiningEvent(true)}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-emerald-600 hover:bg-emerald-50 transition-all mt-4"
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-emerald-600 hover:bg-emerald-50 transition-all"
           >
             <Plus size={18} />
             <span className="font-medium">Join Event</span>
@@ -653,51 +731,54 @@ const MemberDashboard = ({ user, onLogout }: { user: User, onLogout: () => void 
       <main className="ml-64 p-10">
         <AnimatePresence mode="wait">
           {!selectedEvent ? (
-            <motion.div key="overview" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+            <motion.div 
+              key="overview"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+            >
               <header className="mb-10">
                 <h1 className="text-4xl font-serif font-bold text-zinc-900 mb-2">Hello, {user.name}</h1>
                 <p className="text-zinc-500 italic">Select an event to view your assigned tasks.</p>
               </header>
 
-              {events.length === 0 ? (
-                <div className="premium-card p-16 text-center">
-                  <div className="w-20 h-20 bg-zinc-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                    <Calendar size={40} className="text-zinc-400" />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {events.length === 0 ? (
+                  <div className="md:col-span-2 premium-card p-12 text-center">
+                    <div className="w-16 h-16 bg-zinc-100 rounded-full flex items-center justify-center mx-auto mb-4 text-zinc-400">
+                      <Calendar size={32} />
+                    </div>
+                    <h3 className="text-xl font-bold text-zinc-900 mb-2">No Events Joined</h3>
+                    <p className="text-zinc-500 mb-6">Join an event using a code provided by your organizer.</p>
+                    <button onClick={() => setIsJoiningEvent(true)} className="premium-button">Join Your First Event</button>
                   </div>
-                  <h3 className="text-2xl font-bold text-zinc-900 mb-3">No Events Joined Yet</h3>
-                  <p className="text-zinc-500 mb-8 max-w-sm mx-auto">
-                    Join an event using the 6-digit code provided by your organizer.
-                  </p>
-                  <button 
-                    onClick={() => setIsJoiningEvent(true)}
-                    className="premium-button text-lg px-10 py-3"
-                  >
-                    Join Your First Event
-                  </button>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {events.map(event => (
-                    <button
+                ) : (
+                  events.map(event => (
+                    <button 
                       key={event.id}
                       onClick={() => setSelectedEvent(event)}
-                      className="premium-card p-8 text-left hover:border-emerald-500 transition-all group"
+                      className="premium-card p-6 text-left hover:border-emerald-500 transition-all group"
                     >
-                      <div className="flex justify-between items-start mb-6">
-                        <div className="w-14 h-14 rounded-2xl bg-emerald-100 flex items-center justify-center text-emerald-600">
-                          <Calendar size={28} />
+                      <div className="flex items-start justify-between mb-4">
+                        <div className="w-12 h-12 rounded-xl bg-zinc-100 flex items-center justify-center text-zinc-400 group-hover:bg-emerald-50 group-hover:text-emerald-500 transition-all">
+                          <Calendar size={24} />
                         </div>
-                        <ChevronRight className="text-zinc-300 group-hover:text-emerald-500 transition" />
+                        <ChevronRight className="text-zinc-300 group-hover:text-emerald-500 transition-all" />
                       </div>
-                      <h3 className="text-2xl font-bold text-zinc-900 mb-2">{event.name}</h3>
-                      <p className="font-mono text-sm text-zinc-500">CODE: {event.code}</p>
+                      <h3 className="text-xl font-bold text-zinc-900 mb-1">{event.name}</h3>
+                      <p className="text-sm text-zinc-500 font-mono">CODE: {event.code}</p>
                     </button>
-                  ))}
-                </div>
-              )}
+                  ))
+                )}
+              </div>
             </motion.div>
           ) : (
-            <motion.div key="event-tasks" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+            <motion.div 
+              key="event-tasks"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+            >
               <header className="mb-10">
                 <div className="flex items-center gap-3 text-zinc-500 text-sm font-medium mb-2">
                   <button onClick={() => setSelectedEvent(null)} className="hover:text-zinc-900">My Events</button>
@@ -705,47 +786,78 @@ const MemberDashboard = ({ user, onLogout }: { user: User, onLogout: () => void 
                   <span className="text-zinc-900">{selectedEvent.name}</span>
                 </div>
                 <h1 className="text-4xl font-serif font-bold text-zinc-900">{selectedEvent.name}</h1>
+                <p className="text-zinc-500 mt-2">Your assigned tasks for this event.</p>
               </header>
 
-              <div className="space-y-8">
+              <div className="space-y-6">
                 {tasks.length === 0 ? (
-                  <div className="premium-card p-16 text-center text-zinc-500">
-                    No tasks assigned to you in this event yet.
+                  <div className="premium-card p-12 text-center text-zinc-400 italic">
+                    No tasks assigned to you for this event yet.
                   </div>
                 ) : (
                   tasks.map(task => (
                     <div key={task.id} className="premium-card p-8">
-                      <div className="flex flex-col lg:flex-row gap-8">
+                      <div className="flex flex-col md:flex-row md:items-start justify-between gap-6">
                         <div className="flex-1">
-                          <div className="flex items-center gap-3 mb-4">
-                            <h3 className="text-2xl font-bold">{task.title}</h3>
-                            <span className={`px-4 py-1 rounded-full text-sm font-bold ${task.status === 'completed' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                          <div className="flex items-center gap-3 mb-2">
+                            <h3 className="text-2xl font-bold text-zinc-900">{task.title}</h3>
+                            <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                              task.status === 'completed' ? 'bg-emerald-100 text-emerald-700' : 'bg-zinc-100 text-zinc-600'
+                            }`}>
                               {task.status.toUpperCase()}
                             </span>
                           </div>
-                          <p className="text-zinc-600 leading-relaxed">{task.description}</p>
-                          <div className="mt-6 text-sm text-zinc-500">
-                            Deadline: <span className="font-medium">{new Date(task.deadline).toLocaleString()}</span>
+                          <p className="text-zinc-600 mb-6">{task.description}</p>
+                          <div className="flex items-center gap-6 text-sm text-zinc-500">
+                            <div className="flex items-center gap-2">
+                              <Clock size={16} />
+                              <span className="font-medium">Deadline: {new Date(task.deadline).toLocaleString()}</span>
+                            </div>
                           </div>
                         </div>
 
-                        <div className="w-full lg:w-80">
-                          {task.status === 'completed' && task.proof_url ? (
-                            <div className="rounded-2xl overflow-hidden border border-zinc-200">
-                              <img src={task.proof_url} alt="Proof" className="w-full" />
+                        <div className="w-full md:w-64">
+                          {task.status === 'completed' ? (
+                            <div className="space-y-4">
+                              <div className="flex items-center gap-2 text-emerald-600 font-bold">
+                                <CheckCircle2 size={20} />
+                                <span>Task Completed</span>
+                              </div>
+                              {task.proof_url && (
+                                <div className="relative aspect-video rounded-xl overflow-hidden border border-zinc-200">
+                                  <img src={task.proof_url} alt="Proof" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                </div>
+                              )}
                             </div>
                           ) : (
-                            <button 
-                              onClick={() => fileInputRef.current?.click()}
-                              disabled={uploadingTask === task.id}
-                              className="w-full premium-button py-6 flex items-center justify-center gap-3 text-lg"
-                            >
-                              {uploadingTask === task.id ? (
-                                <>Uploading...</>
-                              ) : (
-                                <>📤 Submit Proof</>
-                              )}
-                            </button>
+                            <div className="space-y-4">
+                              <label className="block">
+                                <span className="sr-only">Upload proof</span>
+                                <input 
+                                  type="file" 
+                                  accept="image/*"
+                                  className="hidden"
+                                  ref={fileInputRef}
+                                  onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (file) handleFileUpload(task.id, file);
+                                  }}
+                                />
+                                <button 
+                                  onClick={() => fileInputRef.current?.click()}
+                                  disabled={uploadingTask === task.id}
+                                  className="w-full premium-button flex items-center justify-center gap-2 py-4"
+                                >
+                                  {uploadingTask === task.id ? (
+                                    <Loader2 className="animate-spin" size={20} />
+                                  ) : (
+                                    <Upload size={20} />
+                                  )}
+                                  Submit Proof
+                                </button>
+                              </label>
+                              <p className="text-[10px] text-zinc-400 text-center uppercase tracking-widest font-bold">Max 10MB • Image only</p>
+                            </div>
                           )}
                         </div>
                       </div>
@@ -760,54 +872,44 @@ const MemberDashboard = ({ user, onLogout }: { user: User, onLogout: () => void 
         {/* Join Event Modal */}
         <AnimatePresence>
           {isJoiningEvent && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/40">
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
               <motion.div 
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                className="bg-white rounded-3xl p-8 w-full max-w-md"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setIsJoiningEvent(false)}
+                className="absolute inset-0 bg-zinc-900/40 backdrop-blur-sm"
+              />
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl p-8"
               >
-                <h2 className="text-3xl font-serif font-bold mb-2">Join Event</h2>
-                <p className="text-zinc-500 mb-8">Enter the 6-digit code from your Organizer</p>
-                
-                <form onSubmit={handleJoinEvent}>
-                  <input 
-                    type="text" 
-                    value={eventCode}
-                    onChange={(e) => setEventCode(e.target.value)}
-                    className="premium-input text-3xl font-mono tracking-widest text-center mb-6"
-                    placeholder="ABC123"
-                    maxLength={6}
-                    required
-                  />
+                <h2 className="text-2xl font-serif font-bold text-zinc-900 mb-2">Join Event</h2>
+                <p className="text-zinc-500 mb-6 text-sm">Enter the unique code provided by your organizer.</p>
+                <form onSubmit={handleJoinEvent} className="space-y-6">
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-700 mb-2">Event Code</label>
+                    <input 
+                      type="text" 
+                      value={eventCode}
+                      onChange={(e) => setEventCode(e.target.value)}
+                      className="premium-input text-center text-2xl font-mono tracking-widest uppercase"
+                      placeholder="XXXXXX"
+                      maxLength={6}
+                      required
+                    />
+                  </div>
                   <div className="flex gap-4">
-                    <button 
-                      type="button" 
-                      onClick={() => setIsJoiningEvent(false)}
-                      className="premium-button-outline flex-1 py-4"
-                    >
-                      Cancel
-                    </button>
-                    <button type="submit" className="premium-button flex-1 py-4">
-                      Join Event
-                    </button>
+                    <button type="button" onClick={() => setIsJoiningEvent(false)} className="premium-button-outline flex-1">Cancel</button>
+                    <button type="submit" className="premium-button flex-1">Join Event</button>
                   </div>
                 </form>
               </motion.div>
             </div>
           )}
         </AnimatePresence>
-
-        <input 
-          type="file" 
-          ref={fileInputRef}
-          className="hidden"
-          accept="image/*"
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file && uploadingTask) handleFileUpload(uploadingTask, file);
-          }}
-        />
       </main>
     </div>
   );
